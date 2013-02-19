@@ -33,9 +33,33 @@ module Enumerable
   end
 
   class Lazy < Enumerator
-    def initialize(obj, &block)
-      super(){|yielder|
-        begin
+    if RUBY_VERSION >= "1.9"
+
+      def initialize(obj, &block)
+        super(){|yielder|
+          begin
+            obj.each{|x|
+              if block
+                block.call(yielder, x)
+              else
+                yielder << x
+              end
+            }
+          rescue StopIteration
+          end
+        }
+      end
+
+    else
+      # Ruby 1.8.7
+      require 'generator'
+
+      def initialize(obj, &block)
+        @generator = Generator.new{|yielder|
+          def yielder.<<(v)
+            self.yield(v)
+          end
+
           obj.each{|x|
             if block
               block.call(yielder, x)
@@ -43,9 +67,18 @@ module Enumerable
               yielder << x
             end
           }
-        rescue StopIteration
-        end
-      }
+        }
+      end
+
+      def each(&block)
+        loop{
+          begin
+            block.call(@generator.next)
+          rescue EOFError
+            raise StopIteration
+          end
+        }
+      end
     end
 
     def map(&block)
@@ -104,7 +137,7 @@ module Enumerable
         end
       }
     end
-    
+
     def take(n)
       taken = 0
       Lazy.new(self){|yielder, val|
